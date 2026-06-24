@@ -122,6 +122,18 @@ export function htmlToRichBlocks(html) {
         if (colorMatch) next.color = colorMatch[1].trim();
         const bgMatch = /background-color\s*:\s*([^;]+)/i.exec(style);
         if (bgMatch) next.background = bgMatch[1].trim();
+        // Parse font-size from Word/Mammoth inline styles (e.g. font-size: 12pt or 16px)
+        const fontSizeMatch = /font-size\s*:\s*(\d+(?:\.\d+)?)(pt|px)/i.exec(style);
+        if (fontSizeMatch) {
+          const val = parseFloat(fontSizeMatch[1]);
+          next.sizePt = fontSizeMatch[2].toLowerCase() === 'px' ? Math.round(val * 0.75) : val;
+        }
+        // Parse font-family from Word/Mammoth inline styles
+        const fontFamilyMatch = /font-family\s*:\s*([^;,]+)/i.exec(style);
+        if (fontFamilyMatch) {
+          const family = fontFamilyMatch[1].trim().toLowerCase().replace(/['"]/g, '').replace(/\s+/g, '-');
+          next.font = pdfFontFor(family);
+        }
       }
 
       for (const child of node.childNodes) walk(child, next);
@@ -207,6 +219,10 @@ export function htmlToRichBlocks(html) {
           let headerLevel = null;
           if (/^h[1-3]$/.test(tag)) headerLevel = parseInt(tag[1], 10);
           blocks.push({ type: 'paragraph', runs, align: blockTextAlign(node), headerLevel });
+        } else if ((tag === 'p' || tag === 'div') && !isListItem) {
+          // Empty paragraph from Word/Mammoth — preserve as vertical whitespace
+          // so blank lines intentionally placed in the source document show up in the PDF.
+          blocks.push({ type: 'spacer', height: DEFAULT_RUN_SIZE_PT * 0.352778 * 1.3 });
         }
       }
       // Bare text nodes at the top level (rare, but possible with minimal HTML)
@@ -900,6 +916,9 @@ function addHtmlContentPages(pdf, doc, headerTitle, html, settings = {}) {
       y = pdf.lastAutoTable.finalY + 6;
     } else if (block.type === 'image') {
       y = drawImageBlock(pdf, block, margin, maxWidth, y, pageH, newPage);
+    } else if (block.type === 'spacer') {
+      y += block.height;
+      if (y > pageH - 16) y = newPage();
     } else {
       y = drawRichParagraph(pdf, block, margin, maxWidth, y, pageH, newPage);
     }

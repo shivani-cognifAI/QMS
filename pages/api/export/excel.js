@@ -13,9 +13,14 @@ export default async function handler(req, res) {
 
     const wb = XLSX.utils.book_new();
 
+    function stripHtml(html) {
+      if (!html) return '';
+      return html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{3,}/g, '\n\n').trim();
+    }
+
     const docRows = [
       ['ID','Title','Type','Standard','Clause / Control','Version','Status','Owner','Next Review Date','Scope'],
-      ...docs.map(d => [d.id, d.title, d.type, d.standard, d.clause||'', d.version, d.status, d.owner||'', d.review_date||'', d.scope||''])
+      ...docs.map(d => [d.id, d.title, d.type, d.standard, d.clause||'', d.version, d.status, d.owner||'', d.review_date||'', stripHtml(d.scope)])
     ];
     const ws1 = XLSX.utils.aoa_to_sheet(docRows);
     ws1['!cols'] = [10,40,15,12,18,8,14,20,14,50].map(w => ({ wch: w }));
