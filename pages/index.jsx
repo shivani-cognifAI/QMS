@@ -47,6 +47,7 @@ export default function Dashboard() {
   const { data: capas = [] } = useQuery({ queryKey:['capas'],     queryFn: () => getCapas() });
 
   if (loadingStats) return <div className="page"><Spinner/></div>;
+  if (!stats) return <div className="page" style={{padding:40,color:'var(--text-2)'}}>Failed to load dashboard data. Check server logs.</div>;
 
   const today = new Date();
   const overdue  = docs.filter(d => d.review_date && new Date(d.review_date) < today);

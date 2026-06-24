@@ -2,7 +2,7 @@ import { ensureDb, getDb } from '../../../../lib/db';
 import path from 'path';
 import fs from 'fs';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+const UPLOAD_DIR = process.env.VERCEL ? '/tmp/uploads' : path.join(process.cwd(), 'uploads');
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });

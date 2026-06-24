@@ -7,7 +7,7 @@ const { runMiddleware } = require('../../../../lib/multer-helper');
 
 export const config = { api: { bodyParser: false } };
 
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+const UPLOAD_DIR = process.env.VERCEL ? '/tmp/uploads' : path.join(process.cwd(), 'uploads');
 function hashBuffer(buffer) { return crypto.createHash('sha256').update(buffer).digest('hex'); }
 const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 

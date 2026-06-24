@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import mammoth from 'mammoth';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+const UPLOAD_DIR = process.env.VERCEL ? '/tmp/uploads' : path.join(process.cwd(), 'uploads');
 
 function isWordFile(mimetype = '', originalname = '') {
   const ext = (originalname || '').toLowerCase();
