@@ -18,7 +18,8 @@ import {
 } from '../components/UI';
 import { CURRENT_USER } from '../components/AppShell';
 import { exportCapaRecordPDF, mergeUploadedPdfsIntoPdf, downloadPdfBytes } from '../utils/pdfExport';
-import RichTextEditor from '../components/RichTextEditor';
+import dynamic from 'next/dynamic';
+const RichTextEditor = dynamic(() => import('../components/RichTextEditor'), { ssr: false });
 
 const TYPES    = ['NCR', 'CAPA', 'Observation', 'Opportunity for Improvement'];
 const STATUSES = ['In Progress', 'Waiting for Approval', 'Approved & Closed'];

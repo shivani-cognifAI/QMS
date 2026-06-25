@@ -1210,11 +1210,15 @@ export function exportSingleDocumentPDF(doc, files = [], isArchived = false, wor
   const primaryFile = files.find(f => f.is_primary === 1);
   const afterEv = afterScope + 10 + (doc.evidence?.length || 0) * 5.5;
 
+  const fileListMaxW = width - 28;
+
   if (primaryFile) {
     pdf.setFont('helvetica', 'bold'); pdf.setFontSize(10); pdf.setTextColor('#1C1B18');
     pdf.text('Primary Document', 14, afterEv);
     pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor('#4B4A46');
-    pdf.text(`📄 ${primaryFile.originalname}   (see following page)`, 14, afterEv + 6);
+    const priText = `${primaryFile.originalname}   (see following page)`;
+    const priLines = pdf.splitTextToSize(priText, fileListMaxW);
+    pdf.text(priLines[0], 14, afterEv + 6);
   }
 
   if (supportingFiles.length) {
@@ -1224,11 +1228,13 @@ export function exportSingleDocumentPDF(doc, files = [], isArchived = false, wor
     pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor('#4B4A46');
     const attachmentTitles = new Set((attachments || []).map(a => a.title));
     supportingFiles.forEach((f, i) => {
-      const tag = f.file_category === 'evidence' ? '📎 [Evidence] ' : '📎 ';
+      const tag = f.file_category === 'evidence' ? '[Evidence] ' : '';
       const hasContent = attachmentTitles.has(f.originalname);
       const sizeLabel = f.mimetype === 'application/x-qms-document' ? 'Created document' : `${((f.size||0)/1024).toFixed(1)} KB`;
       const suffix = hasContent ? '   (content included below)' : `   (${sizeLabel})`;
-      pdf.text(`${tag}${f.originalname}${suffix}`, 14, y + 6 + i * 5.5);
+      const fileText = `${tag}${f.originalname}${suffix}`;
+      const fileLines = pdf.splitTextToSize(fileText, fileListMaxW);
+      pdf.text(fileLines[0], 14, y + 6 + i * 5.5);
     });
   }
 

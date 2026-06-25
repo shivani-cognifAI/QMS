@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import RichTextEditor from '../components/RichTextEditor';
+import dynamic from 'next/dynamic';
+const RichTextEditor = dynamic(() => import('../components/RichTextEditor'), { ssr: false });
 import {
   Plus, Search, Edit2, Trash2, History, Send,
   Upload, Download, FileText, File, Paperclip, X,
@@ -1035,23 +1036,23 @@ export default function Documents() {
 
       <Modal open={docModal} onClose={()=>setDocModal(false)} title={editDoc?`Edit — ${editDoc.id}`:'New Document'} size="modal-lg">
         <div className="form-2col">
-          <div className="form-row"><label>Document ID</label><input value={form.id} onChange={e=>setForm(f=>({...f,id:e.target.value}))} placeholder="e.g. SOP-001" disabled={!!editDoc}/></div>
+          <div className="form-row"><label>Document ID <span style={{color:'var(--red)'}}>*</span></label><input value={form.id} onChange={e=>setForm(f=>({...f,id:e.target.value}))} placeholder="e.g. SOP-001" disabled={!!editDoc}/></div>
           <div className="form-row">
-            <label>Type</label>
+            <label>Type <span style={{color:'var(--red)'}}>*</span></label>
             <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
               {form.type && !TYPES.includes(form.type) && <option key={form.type} value={form.type}>{form.type} (no longer in list)</option>}
               {TYPES.map(t=><option key={t}>{t}</option>)}
             </select>
           </div>
         </div>
-        <div className="form-row"><label>Title</label><input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="Document title"/></div>
+        <div className="form-row"><label>Title <span style={{color:'var(--red)'}}>*</span></label><input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="Document title"/></div>
         <div className="form-2col">
-          <div className="form-row"><label>Standard</label><select value={form.standard} onChange={e=>setForm(f=>({...f,standard:e.target.value}))}>{STANDARDS.map(s=><option key={s}>{s}</option>)}</select></div>
+          <div className="form-row"><label>Standard <span style={{color:'var(--red)'}}>*</span></label><select value={form.standard} onChange={e=>setForm(f=>({...f,standard:e.target.value}))}>{STANDARDS.map(s=><option key={s}>{s}</option>)}</select></div>
           <div className="form-row"><label>Clause / Control</label><input value={form.clause} onChange={e=>setForm(f=>({...f,clause:e.target.value}))} placeholder="e.g. 7.5 or A.8.2"/></div>
         </div>
         <div className="form-2col">
           <div className="form-row"><label>Version</label><input value={form.version} onChange={e=>setForm(f=>({...f,version:e.target.value}))} placeholder="1.0"/></div>
-          <div className="form-row"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{EDITABLE_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
+          <div className="form-row"><label>Status <span style={{color:'var(--red)'}}>*</span></label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>{EDITABLE_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
         </div>
         <div className="form-2col">
           <div className="form-row">
