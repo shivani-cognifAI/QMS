@@ -1,13 +1,10 @@
 import { ensureDb, getDb } from '../../../../lib/db';
-import path from 'path';
-import fs from 'fs';
 import crypto from 'crypto';
 import multer from 'multer';
 const { runMiddleware } = require('../../../../lib/multer-helper');
 
 export const config = { api: { bodyParser: false } };
 
-const UPLOAD_DIR = process.env.VERCEL ? '/tmp/uploads' : path.join(process.cwd(), 'uploads');
 function hashBuffer(buffer) { return crypto.createHash('sha256').update(buffer).digest('hex'); }
 const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -25,19 +22,18 @@ export default async function handler(req, res) {
     const doc = db.prepare('SELECT * FROM documents WHERE id=?').get(file.doc_id);
     if (!doc) { db.close(); return res.status(404).json({ error: 'Document not found' }); }
 
-    let newHash = file.file_hash, newSize = file.size;
+    let newHash = file.file_hash, newSize = file.size, newData = file.file_data || null;
     if (req.file) {
-      const filePath = path.join(UPLOAD_DIR, file.filename);
-      fs.writeFileSync(filePath, req.file.buffer);
       newHash = hashBuffer(req.file.buffer);
       newSize = req.file.buffer.length;
+      newData = req.file.buffer.toString('base64');
     }
 
     const parts = String(doc.version).split('.');
     const newVersion = parts.length >= 2 ? `${parts[0]}.${Number(parts[1]) + 1}` : `${doc.version}.1`;
 
     db.transaction(() => {
-      db.prepare('UPDATE document_files SET file_hash=?,size=?,uploaded_at=datetime("now") WHERE id=?').run(newHash, newSize, file.id);
+      db.prepare('UPDATE document_files SET file_hash=?,size=?,file_data=?,uploaded_at=datetime("now") WHERE id=?').run(newHash, newSize, newData, file.id);
       db.prepare(`UPDATE documents SET version=?,status='Draft',version_date=NULL,updated_at=datetime('now') WHERE id=?`).run(newVersion, file.doc_id);
       db.prepare(`INSERT INTO version_history (doc_id,version,author,change_note) VALUES (?,?,?,?)`).run(file.doc_id, newVersion, confirmed_by || 'System', `File change confirmed by ${confirmed_by}. ${change_note}. Document reset to Draft for re-approval.`);
     })();

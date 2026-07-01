@@ -33,18 +33,25 @@ export default async function handler(req, res) {
     const file = db.prepare('SELECT * FROM document_files WHERE id=?').get(fileId);
     db.close();
     if (!file) return res.status(404).json({ error: 'File not found' });
-    const filePath = path.join(UPLOAD_DIR, file.filename);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing from disk' });
     if (!isWordFile(file.mimetype, file.originalname)) return res.status(400).json({ error: 'Not a Word document' });
+
+    let fileBuffer;
+    if (file.file_data) {
+      fileBuffer = Buffer.from(file.file_data, 'base64');
+    } else {
+      const filePath = path.join(UPLOAD_DIR, file.filename);
+      if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing from disk' });
+      fileBuffer = fs.readFileSync(filePath);
+    }
+
     const ext = (file.originalname || '').toLowerCase();
     if (ext.endsWith('.docx')) {
-      const result = await mammoth.convertToHtml({ path: filePath }, { styleMap: ['u => u'] });
-      const plainResult = await mammoth.extractRawText({ path: filePath });
+      const result      = await mammoth.convertToHtml({ buffer: fileBuffer }, { styleMap: ['u => u'] });
+      const plainResult = await mammoth.extractRawText({ buffer: fileBuffer });
       return res.json({ html: result.value, text: plainResult.value });
     }
     if (ext.endsWith('.doc')) {
-      const buf  = fs.readFileSync(filePath);
-      const text = extractTextFromDocBinary(buf);
+      const text = extractTextFromDocBinary(fileBuffer);
       if (text.length < 20) return res.status(400).json({ error: 'This is an old .doc file. Please save it as .docx in Word for full text extraction.', hint: 'save_as_docx' });
       return res.json({ text });
     }
