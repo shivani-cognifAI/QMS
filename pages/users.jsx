@@ -4,10 +4,11 @@ import { Plus, Edit2, Trash2, Users, Shield, Eye, PenTool } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getUsers, createUser, updateUser, deleteUser, updateSystemRole } from '../api';
 import { Spinner, EmptyState, Modal, ConfirmDialog, fmtDate } from '../components/UI';
+import { useAuth } from '../context/AuthContext';
 
 const ROLES = ['QA Manager','CISO','IT Manager','Risk Officer','MD / CEO','HR Manager','Procurement','Internal Auditor','Reviewer','Document Author'];
 const SYSTEM_ROLES = ['admin', 'editor', 'viewer'];
-const EMPTY = { name: '', email: '', role: 'Reviewer', system_role: 'viewer' };
+const EMPTY = { name: '', email: '', role: 'Reviewer', system_role: 'viewer', password: '' };
 
 const SYSTEM_ROLE_META = {
   admin:  { label:'Admin',  color:'var(--red)',    bg:'var(--red-bg)',    icon: Shield,  desc:'Full access — can create, edit, approve and delete everything' },
@@ -17,6 +18,8 @@ const SYSTEM_ROLE_META = {
 
 export default function UsersPage() {
   const qc = useQueryClient();
+  const { user: currentUser } = useAuth();
+  const isAdmin = currentUser?.system_role === 'admin';
   const [modal, setModal]       = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm]         = useState(EMPTY);
@@ -47,7 +50,7 @@ export default function UsersPage() {
   });
 
   function openNew()   { setEditItem(null); setForm(EMPTY); setModal(true); }
-  function openEdit(u) { setEditItem(u); setForm({ name:u.name, email:u.email, role:u.role, system_role:u.system_role||'viewer' }); setModal(true); }
+  function openEdit(u) { setEditItem(u); setForm({ name:u.name, email:u.email, role:u.role, system_role:u.system_role||'viewer', password:'' }); setModal(true); }
   function f(field)    { return e => setForm(p => ({ ...p, [field]: e.target.value })); }
   function initials(name) { return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2); }
 
@@ -62,7 +65,7 @@ export default function UsersPage() {
           <div className="page-title">Users & Access</div>
           <div className="page-sub">Manage team members, approvers and system-wide roles</div>
         </div>
-        <button className="btn btn-primary" onClick={openNew}><Plus size={15}/> Add User</button>
+        {isAdmin && <button className="btn btn-primary" onClick={openNew}><Plus size={15}/> Add User</button>}
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:20 }}>
@@ -131,11 +134,12 @@ export default function UsersPage() {
                           <Icon size={13} color={meta.color}/>
                           <select
                             value={sr}
-                            onChange={e => roleMut.mutate({ userId: u.id, role: e.target.value })}
+                            disabled={!isAdmin}
+                            onChange={e => isAdmin && roleMut.mutate({ userId: u.id, role: e.target.value })}
                             style={{ fontSize:12, padding:'3px 8px', width:'auto',
                               background: meta.bg, color: meta.color,
                               border:`1px solid ${meta.color}40`, borderRadius:20, fontWeight:600,
-                              cursor:'pointer',
+                              cursor: isAdmin ? 'pointer' : 'default',
                             }}>
                             {SYSTEM_ROLES.map(r => (
                               <option key={r} value={r}>{SYSTEM_ROLE_META[r].label}</option>
@@ -145,10 +149,12 @@ export default function UsersPage() {
                       </td>
                       <td style={{ fontSize:12, color:'var(--text-2)' }}>{fmtDate(u.created_at)}</td>
                       <td>
-                        <div style={{ display:'flex', gap:6 }}>
-                          <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(u)}><Edit2 size={14}/></button>
-                          <button className="btn btn-ghost btn-icon btn-sm" style={{ color:'var(--red)' }} onClick={() => setDel(u)}><Trash2 size={14}/></button>
-                        </div>
+                        {isAdmin && (
+                          <div style={{ display:'flex', gap:6 }}>
+                            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(u)}><Edit2 size={14}/></button>
+                            <button className="btn btn-ghost btn-icon btn-sm" style={{ color:'var(--red)' }} onClick={() => setDel(u)}><Trash2 size={14}/></button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -182,9 +188,17 @@ export default function UsersPage() {
           </select>
           <div className="input-hint">{SYSTEM_ROLE_META[form.system_role]?.desc}</div>
         </div>
+        <div className="form-row">
+          <label>{editItem ? 'New Password' : 'Password'}</label>
+          <input type="password" value={form.password} onChange={f('password')}
+            placeholder={editItem ? 'Leave blank to keep current password' : 'Set login password'}
+            autoComplete="new-password"/>
+          {!editItem && <div className="input-hint">Required — user will use this to log in</div>}
+        </div>
         <div className="modal-footer">
           <button className="btn" onClick={() => setModal(false)}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => saveMut.mutate(form)} disabled={saveMut.isPending || !form.name || !form.email}>
+          <button className="btn btn-primary" onClick={() => saveMut.mutate(form)}
+            disabled={saveMut.isPending || !form.name || !form.email || (!editItem && !form.password)}>
             {saveMut.isPending ? 'Saving…' : editItem ? 'Update User' : 'Add User'}
           </button>
         </div>
