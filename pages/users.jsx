@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Users, Shield, Eye, PenTool } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, Shield, Eye, PenTool, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
+import axios from 'axios';
 import { getUsers, createUser, updateUser, deleteUser, updateSystemRole } from '../api';
 import { Spinner, EmptyState, Modal, ConfirmDialog, fmtDate } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 
 const ROLES = ['QA Manager','CISO','IT Manager','Risk Officer','MD / CEO','HR Manager','Procurement','Internal Auditor','Reviewer','Document Author'];
 const SYSTEM_ROLES = ['admin', 'editor', 'viewer'];
-const EMPTY = { name: '', email: '', role: 'Reviewer', system_role: 'viewer', password: '' };
+const EMPTY = { name: '', email: '', role: 'Reviewer', system_role: 'viewer' };
 
 const SYSTEM_ROLE_META = {
   admin:  { label:'Admin',  color:'var(--red)',    bg:'var(--red-bg)',    icon: Shield,  desc:'Full access — can create, edit, approve and delete everything' },
@@ -20,18 +21,24 @@ export default function UsersPage() {
   const qc = useQueryClient();
   const { user: currentUser } = useAuth();
   const isAdmin = currentUser?.system_role === 'admin';
-  const [modal, setModal]       = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [form, setForm]         = useState(EMPTY);
-  const [delTarget, setDel]     = useState(null);
+  const [modal, setModal]         = useState(false);
+  const [editItem, setEditItem]   = useState(null);
+  const [form, setForm]           = useState(EMPTY);
+  const [delTarget, setDel]       = useState(null);
+  const [resetTarget, setReset]   = useState(null);
+  const [resetting, setResetting] = useState(false);
 
   const { data: users = [], isLoading } = useQuery({ queryKey:['users'], queryFn: getUsers });
 
   const saveMut = useMutation({
     mutationFn: data => editItem ? updateUser(editItem.id, data) : createUser(data),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       qc.invalidateQueries(['users']);
-      toast.success(editItem ? 'User updated' : 'User added');
+      if (!editItem) {
+        toast.success('User created — OTP sent to their email');
+      } else {
+        toast.success('User updated');
+      }
       setModal(false);
     },
     onError: e => toast.error(e.response?.data?.error || 'Save failed'),
@@ -49,8 +56,22 @@ export default function UsersPage() {
     onError:   e  => toast.error(e.response?.data?.error || 'Failed'),
   });
 
+  async function handleResetPassword() {
+    if (!resetTarget) return;
+    setResetting(true);
+    try {
+      await axios.post(`/api/users/${resetTarget.id}`);
+      toast.success(`Password reset — OTP emailed to ${resetTarget.email}`);
+      setReset(null);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Reset failed');
+    } finally {
+      setResetting(false);
+    }
+  }
+
   function openNew()   { setEditItem(null); setForm(EMPTY); setModal(true); }
-  function openEdit(u) { setEditItem(u); setForm({ name:u.name, email:u.email, role:u.role, system_role:u.system_role||'viewer', password:'' }); setModal(true); }
+  function openEdit(u) { setEditItem(u); setForm({ name:u.name, email:u.email, role:u.role, system_role:u.system_role||'viewer' }); setModal(true); }
   function f(field)    { return e => setForm(p => ({ ...p, [field]: e.target.value })); }
   function initials(name) { return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2); }
 
@@ -88,7 +109,9 @@ export default function UsersPage() {
       </div>
 
       <div style={{ background:'var(--accent-bg)', border:'1px solid var(--accent-bdr)', borderRadius:'var(--radius-md)', padding:'10px 14px', fontSize:13, color:'var(--accent)', marginBottom:16 }}>
-        System role controls what a user can do across the entire QMS. You can also grant per-document edit access from the shield icon on any document row.
+        {isAdmin
+          ? 'Add a user to invite them — they will receive a one-time password by email to log in and set their own password.'
+          : 'System role controls what a user can do across the entire QMS.'}
       </div>
 
       {isLoading ? <Spinner/> : users.length === 0 ? (
@@ -100,7 +123,7 @@ export default function UsersPage() {
               <thead>
                 <tr>
                   <th>Name</th><th>Email</th><th>Department Role</th>
-                  <th>System Role</th><th>Added</th><th></th>
+                  <th>System Role</th><th>Added</th>{isAdmin && <th></th>}
                 </tr>
               </thead>
               <tbody>
@@ -112,15 +135,17 @@ export default function UsersPage() {
                     <tr key={u.id}>
                       <td>
                         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                          <div style={{
-                            width:32, height:32, borderRadius:'50%',
-                            background: meta.bg, color: meta.color,
-                            display:'flex', alignItems:'center', justifyContent:'center',
-                            fontSize:11, fontWeight:700, flexShrink:0,
-                          }}>
+                          <div style={{ width:32, height:32, borderRadius:'50%', background: meta.bg, color: meta.color, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, flexShrink:0 }}>
                             {initials(u.name)}
                           </div>
-                          <span style={{ fontWeight:500 }}>{u.name}</span>
+                          <div>
+                            <span style={{ fontWeight:500 }}>{u.name}</span>
+                            {u.must_change_password === 1 && (
+                              <span style={{ marginLeft:7, fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:20, background:'var(--amber-bg)', color:'var(--amber)', border:'1px solid #f0c060' }}>
+                                Pending setup
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td style={{ fontSize:13, color:'var(--text-2)' }}>{u.email}</td>
@@ -136,11 +161,7 @@ export default function UsersPage() {
                             value={sr}
                             disabled={!isAdmin}
                             onChange={e => isAdmin && roleMut.mutate({ userId: u.id, role: e.target.value })}
-                            style={{ fontSize:12, padding:'3px 8px', width:'auto',
-                              background: meta.bg, color: meta.color,
-                              border:`1px solid ${meta.color}40`, borderRadius:20, fontWeight:600,
-                              cursor: isAdmin ? 'pointer' : 'default',
-                            }}>
+                            style={{ fontSize:12, padding:'3px 8px', width:'auto', background: meta.bg, color: meta.color, border:`1px solid ${meta.color}40`, borderRadius:20, fontWeight:600, cursor: isAdmin ? 'pointer' : 'default' }}>
                             {SYSTEM_ROLES.map(r => (
                               <option key={r} value={r}>{SYSTEM_ROLE_META[r].label}</option>
                             ))}
@@ -148,14 +169,15 @@ export default function UsersPage() {
                         </div>
                       </td>
                       <td style={{ fontSize:12, color:'var(--text-2)' }}>{fmtDate(u.created_at)}</td>
-                      <td>
-                        {isAdmin && (
+                      {isAdmin && (
+                        <td>
                           <div style={{ display:'flex', gap:6 }}>
-                            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(u)}><Edit2 size={14}/></button>
-                            <button className="btn btn-ghost btn-icon btn-sm" style={{ color:'var(--red)' }} onClick={() => setDel(u)}><Trash2 size={14}/></button>
+                            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(u)} title="Edit"><Edit2 size={14}/></button>
+                            <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setReset(u)} title="Reset password" style={{ color:'var(--amber)' }}><KeyRound size={14}/></button>
+                            <button className="btn btn-ghost btn-icon btn-sm" style={{ color:'var(--red)' }} onClick={() => setDel(u)} title="Delete"><Trash2 size={14}/></button>
                           </div>
-                        )}
-                      </td>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -165,6 +187,7 @@ export default function UsersPage() {
         </div>
       )}
 
+      {/* Add / Edit modal */}
       <Modal open={modal} onClose={() => setModal(false)} title={editItem ? `Edit — ${editItem.name}` : 'Add User'}>
         <div className="form-row">
           <label>Full Name</label>
@@ -173,7 +196,9 @@ export default function UsersPage() {
         <div className="form-row">
           <label>Email Address</label>
           <input type="email" value={form.email} onChange={f('email')} placeholder="arjun@company.com" disabled={!!editItem}/>
-          {editItem && <div className="input-hint">Email cannot be changed after creation</div>}
+          {editItem
+            ? <div className="input-hint">Email cannot be changed after creation</div>
+            : <div className="input-hint">A one-time password will be sent to this email</div>}
         </div>
         <div className="form-row">
           <label>Department Role</label>
@@ -188,25 +213,25 @@ export default function UsersPage() {
           </select>
           <div className="input-hint">{SYSTEM_ROLE_META[form.system_role]?.desc}</div>
         </div>
-        <div className="form-row">
-          <label>{editItem ? 'New Password' : 'Password'}</label>
-          <input type="password" value={form.password} onChange={f('password')}
-            placeholder={editItem ? 'Leave blank to keep current password' : 'Set login password'}
-            autoComplete="new-password"/>
-          {!editItem && <div className="input-hint">Required — user will use this to log in</div>}
-        </div>
         <div className="modal-footer">
           <button className="btn" onClick={() => setModal(false)}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => saveMut.mutate(form)}
-            disabled={saveMut.isPending || !form.name || !form.email || (!editItem && !form.password)}>
-            {saveMut.isPending ? 'Saving…' : editItem ? 'Update User' : 'Add User'}
+          <button className="btn btn-primary" onClick={() => saveMut.mutate(form)} disabled={saveMut.isPending || !form.name || !form.email}>
+            {saveMut.isPending ? 'Saving…' : editItem ? 'Update User' : 'Add User & Send Invite'}
           </button>
         </div>
       </Modal>
 
+      {/* Reset password confirm */}
+      <ConfirmDialog open={!!resetTarget} onClose={() => setReset(null)}
+        title="Reset Password"
+        message={`Send a new one-time password to ${resetTarget?.email}? They will need to set a new password on next login.`}
+        onConfirm={handleResetPassword}
+        confirmLabel={resetting ? 'Sending…' : 'Reset & Send OTP'}/>
+
+      {/* Delete confirm */}
       <ConfirmDialog open={!!delTarget} onClose={() => setDel(null)} danger
         title="Remove User"
-        message={`Remove "${delTarget?.name}"? They will no longer be available as an approver.`}
+        message={`Remove "${delTarget?.name}"? They will no longer be able to log in.`}
         onConfirm={() => delMut.mutate(delTarget.id)}/>
     </div>
   );

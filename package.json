@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@azure/communication-email": "^1.1.0",
     "@tanstack/react-query": "^5.51.1",
     "axios": "^1.7.2",
     "bcryptjs": "^3.0.3",

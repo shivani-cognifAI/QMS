@@ -17,7 +17,14 @@ export default async function handler(req, res) {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
 
-    const payload = { id: user.id, name: user.name, email: user.email, role: user.role, system_role: user.system_role };
+    const payload = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      system_role: user.system_role,
+      must_change_password: user.must_change_password === 1,
+    };
     const token = signToken(payload);
     res.setHeader('Set-Cookie', setCookieHeader(token));
     return res.json(payload);

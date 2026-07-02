@@ -10,18 +10,21 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } },
 });
 
+const PUBLIC_PATHS = ['/login', '/change-password'];
+
 function RouteGuard({ Component, pageProps }) {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const isLoginPage = router.pathname === '/login';
+  const isPublic = PUBLIC_PATHS.includes(router.pathname);
 
   useEffect(() => {
     if (loading) return;
-    if (!user && !isLoginPage) router.replace('/login');
-    if (user  && isLoginPage)  router.replace('/');
-  }, [user, loading, isLoginPage, router]);
+    if (!user && !isPublic) { router.replace('/login'); return; }
+    if (user?.must_change_password && router.pathname !== '/change-password') { router.replace('/change-password'); return; }
+    if (user && !user.must_change_password && isPublic) router.replace('/');
+  }, [user, loading, isPublic, router]);
 
-  if (isLoginPage) return <Component {...pageProps} />;
+  if (isPublic) return <Component {...pageProps} />;
 
   if (loading || !user) {
     return (
