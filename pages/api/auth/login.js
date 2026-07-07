@@ -1,4 +1,4 @@
-import { ensureDb, getDb } from '../../../lib/db';
+﻿import { ensureDb, getDb } from '../../../lib/db';
 import bcrypt from 'bcryptjs';
 const { signToken, setCookieHeader } = require('../../../lib/auth');
 
@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    const user = db.prepare('SELECT * FROM users WHERE lower(email)=lower(?)').get(email.trim());
+    const user = await db.prepare('SELECT * FROM users WHERE lower(email)=lower(?)').get(email.trim());
     db.close();
 
     if (!user || !user.password_hash) return res.status(401).json({ error: 'Invalid email or password' });

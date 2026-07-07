@@ -1,4 +1,4 @@
-import { ensureDb, getDb } from '../../../lib/db';
+﻿import { ensureDb, getDb } from '../../../lib/db';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     if (standard) { sql += ' AND standard = ?';                         params.push(standard); }
     if (search)   { sql += ' AND (doc_title LIKE ? OR doc_id LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
     sql += ' ORDER BY archived_at DESC';
-    const rows = db.prepare(sql).all(...params);
+    const rows = await db.prepare(sql).all(...params);
     db.close();
     res.json(rows.map(r => ({ ...r, evidence: JSON.parse(r.evidence || '[]') })));
   } catch (err) {

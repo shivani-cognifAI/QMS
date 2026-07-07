@@ -7,7 +7,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const db = getDb();
-      const rows = db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').all(userId);
+      const rows = await db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').all(userId);
       db.close();
       return res.json(rows);
     }
@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     if (req.method === 'DELETE') {
       // DELETE /api/notifications/:id — delete a single notification
       const db = getDb();
-      db.prepare('DELETE FROM notifications WHERE id = ?').run(userId);
+      await db.prepare('DELETE FROM notifications WHERE id = ?').run(userId);
       db.close();
       return res.json({ message: 'Notification deleted' });
     }

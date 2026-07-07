@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    const steps = db.prepare(`
+    const steps = await db.prepare(`
       SELECT s.*, w.capa_id, w.submitted_by, w.created_at as wf_created,
              c.title as capa_title, c.type as capa_type, c.clause as capa_clause
       FROM capa_approval_steps s

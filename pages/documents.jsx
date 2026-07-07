@@ -23,7 +23,7 @@ import {
   fmtDateTime, Spinner, EmptyState, Modal,
   ConfirmDialog, SectionHead,
 } from '../components/UI';
-import { CURRENT_USER } from '../components/AppShell';
+import { useAuth } from '../context/AuthContext';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { exportSingleDocumentPDF, exportDocumentsPDF } from '../utils/pdfExport';
 
@@ -84,6 +84,7 @@ function hasAnyChange(original, edited, evidenceArr) {
 }
 
 export default function Documents() {
+  const { user: CURRENT_USER } = useAuth();
   const qc = useQueryClient();
   const uploadDocRef  = useRef(null);
   const evidenceInputRef = useRef(null);

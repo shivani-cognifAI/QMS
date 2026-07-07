@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    db.prepare('DELETE FROM access_permissions WHERE doc_id=? AND user_id=?').run(docId, userId);
+    await db.prepare('DELETE FROM access_permissions WHERE doc_id=? AND user_id=?').run(docId, userId);
     db.close();
     res.json({ message: 'Permission revoked' });
   } catch (err) {

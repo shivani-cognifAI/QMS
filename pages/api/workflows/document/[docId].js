@@ -6,9 +6,9 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    const wf = db.prepare('SELECT * FROM workflows WHERE doc_id = ? ORDER BY id DESC LIMIT 1').get(docId);
+    const wf = await db.prepare('SELECT * FROM workflows WHERE doc_id = ? ORDER BY id DESC LIMIT 1').get(docId);
     if (!wf) { db.close(); return res.json(null); }
-    wf.steps = db.prepare('SELECT * FROM approval_steps WHERE workflow_id = ? ORDER BY step_order').all(wf.id);
+    wf.steps = await db.prepare('SELECT * FROM approval_steps WHERE workflow_id = ? ORDER BY step_order').all(wf.id);
     db.close();
     res.json(wf);
   } catch (err) {

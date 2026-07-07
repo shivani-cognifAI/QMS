@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    const history = db.prepare('SELECT * FROM version_history WHERE doc_id = ? ORDER BY changed_at DESC').all(id);
+    const history = await db.prepare('SELECT * FROM version_history WHERE doc_id = ? ORDER BY changed_at DESC').all(id);
     db.close();
     res.json(history);
   } catch (err) {

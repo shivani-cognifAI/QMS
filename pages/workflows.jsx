@@ -9,9 +9,10 @@ import {
 import { statusPill, standardPill, fmtDateTime, Spinner, EmptyState, Modal, WorkflowStepper, SectionHead } from '../components/UI';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import CapaPreviewModal from '../components/CapaPreviewModal';
-import { CURRENT_USER } from '../components/AppShell';
+import { useAuth } from '../context/AuthContext';
 
 export default function Workflows() {
+  const { user: CURRENT_USER } = useAuth();
   const qc = useQueryClient();
   const [tab, setTab]           = useState('pending');
   const [filterStatus, setFSt]  = useState('');

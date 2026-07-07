@@ -18,13 +18,13 @@ export default async function handler(req, res) {
     await runMiddleware(req, res, uploadMem.single('file'));
     await ensureDb();
     const db = getDb();
-    const file = db.prepare('SELECT * FROM document_files WHERE id=?').get(fileId);
+    const file = await db.prepare('SELECT * FROM document_files WHERE id=?').get(fileId);
     if (!file) { db.close(); return res.status(404).json({ error: 'File not found' }); }
     if (req.file) {
       const filePath = path.join(UPLOAD_DIR, file.filename);
       fs.writeFileSync(filePath, req.file.buffer);
       const newHash = hashBuffer(req.file.buffer);
-      db.prepare('UPDATE document_files SET file_hash=?,size=?,uploaded_at=datetime("now") WHERE id=?').run(newHash, req.file.buffer.length, file.id);
+      await db.prepare('UPDATE document_files SET file_hash=?,size=?,uploaded_at=datetime("now") WHERE id=?').run(newHash, req.file.buffer.length, file.id);
     }
     db.close();
     res.json({ message: 'File updated, no version change recorded' });

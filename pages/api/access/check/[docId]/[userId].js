@@ -6,10 +6,10 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId);
+    const user = await db.prepare('SELECT * FROM users WHERE id=?').get(userId);
     if (!user) { db.close(); return res.status(404).json({ error: 'User not found' }); }
     if (user.system_role === 'admin') { db.close(); return res.json({ permission: 'edit', reason: 'admin' }); }
-    const perm = db.prepare('SELECT permission FROM access_permissions WHERE doc_id=? AND user_id=?').get(docId, userId);
+    const perm = await db.prepare('SELECT permission FROM access_permissions WHERE doc_id=? AND user_id=?').get(docId, userId);
     db.close();
     if (perm) return res.json({ permission: perm.permission });
     if (user.system_role === 'editor') return res.json({ permission: 'view', reason: 'editor-default' });

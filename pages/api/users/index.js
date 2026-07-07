@@ -1,4 +1,4 @@
-import { ensureDb, getDb } from '../../../lib/db';
+﻿import { ensureDb, getDb } from '../../../lib/db';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 const { requireAuth } = require('../../../lib/auth');
@@ -16,7 +16,7 @@ async function handler(req, res) {
 
     if (req.method === 'GET') {
       const db = getDb();
-      const users = db.prepare('SELECT id,name,email,role,system_role,must_change_password,created_at FROM users ORDER BY name').all();
+      const users = await db.prepare('SELECT id,name,email,role,system_role,must_change_password,created_at FROM users ORDER BY name').all();
       db.close();
       return res.json(users);
     }
@@ -27,15 +27,15 @@ async function handler(req, res) {
       if (!name || !email || !role) return res.status(400).json({ error: 'name, email, role are required' });
 
       const db = getDb();
-      const exists = db.prepare('SELECT id FROM users WHERE lower(email)=lower(?)').get(email);
+      const exists = await db.prepare('SELECT id FROM users WHERE lower(email)=lower(?)').get(email);
       if (exists) { db.close(); return res.status(409).json({ error: 'Email already registered' }); }
 
       const otp  = generateOtp();
       const hash = await bcrypt.hash(otp, 10);
-      const result = db.prepare(
+      const result = await db.prepare(
         'INSERT INTO users (name,email,role,system_role,password_hash,must_change_password) VALUES (?,?,?,?,?,1)'
       ).run(name, email.trim().toLowerCase(), role, system_role, hash);
-      const user = db.prepare('SELECT id,name,email,role,system_role,must_change_password,created_at FROM users WHERE id=?').get(result.lastInsertRowid);
+      const user = await db.prepare('SELECT id,name,email,role,system_role,must_change_password,created_at FROM users WHERE id=?').get(result.lastInsertRowid);
       db.close();
 
       // Send OTP email — non-blocking so the API responds fast

@@ -1,7 +1,7 @@
 import { ensureDb, getDb } from '../../../../lib/db';
 
-function getNumberingConfig(db, type) {
-  const row = db.prepare(`SELECT value FROM settings WHERE key='capa_numbering'`).get();
+async function getNumberingConfig(db, type) {
+  const row = await db.prepare(`SELECT value FROM settings WHERE key='capa_numbering'`).get();
   let all = {};
   if (row && row.value) { try { all = JSON.parse(row.value); } catch (_) {} }
   const cfg = all[type] || { prefix: '', rules: [] };
@@ -26,14 +26,14 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    const cfg   = getNumberingConfig(db, type);
+    const cfg   = await getNumberingConfig(db, type);
     const today = new Date().toISOString().slice(0, 10);
 
     if (cfg.rules.length > 0) {
       const rule = findMatchingRule(cfg.rules, today);
       if (!rule) { db.close(); return res.status(400).json({ error: `No record numbering rule covers today's date (${today}) for ${type}.`, noRuleForDate: true }); }
       const suffixKey = rule.suffix || '';
-      const seqRow = db.prepare('SELECT last_seq FROM capa_seq WHERE record_type=? AND suffix=?').get(type, suffixKey);
+      const seqRow = await db.prepare('SELECT last_seq FROM capa_seq WHERE record_type=? AND suffix=?').get(type, suffixKey);
       const nextSeq = (seqRow ? seqRow.last_seq : 0) + 1;
       const numberPart = String(nextSeq).padStart(3, '0');
       const suffixPart = rule.suffix ? `-${rule.suffix}` : '';
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
       return res.json({ id, seq: nextSeq, prefix: cfg.prefix || '', suffix: rule.suffix || '' });
     }
 
-    const seqRow = db.prepare('SELECT last_seq FROM capa_seq WHERE record_type=? AND suffix=?').get(type, '');
+    const seqRow = await db.prepare('SELECT last_seq FROM capa_seq WHERE record_type=? AND suffix=?').get(type, '');
     const nextSeq = (seqRow ? seqRow.last_seq : 0) + 1;
     const numberPart = String(nextSeq).padStart(3, '0');
     const id = `${cfg.prefix || ''}${numberPart}`;

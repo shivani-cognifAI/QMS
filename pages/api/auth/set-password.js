@@ -1,4 +1,4 @@
-import { ensureDb, getDb } from '../../../lib/db';
+﻿import { ensureDb, getDb } from '../../../lib/db';
 import bcrypt from 'bcryptjs';
 const { requireAuth } = require('../../../lib/auth');
 
@@ -15,7 +15,7 @@ async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    const target = db.prepare('SELECT * FROM users WHERE id=?').get(userId || req.user.id);
+    const target = await db.prepare('SELECT * FROM users WHERE id=?').get(userId || req.user.id);
     if (!target) { db.close(); return res.status(404).json({ error: 'User not found' }); }
 
     if (isSelf && !isAdmin) {
@@ -25,7 +25,7 @@ async function handler(req, res) {
     }
 
     const hash = await bcrypt.hash(newPassword, 10);
-    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, target.id);
+    await db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, target.id);
     db.close();
     return res.json({ message: 'Password updated' });
   } catch (err) {

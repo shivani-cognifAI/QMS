@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(userId);
+    await db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(userId);
     db.close();
     res.json({ message: 'Marked as read' });
   } catch (err) {

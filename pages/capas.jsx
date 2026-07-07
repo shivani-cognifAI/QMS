@@ -16,7 +16,7 @@ import {
   capaStatusPill, approvalStatusPill, fmtDate, fmtDateTime, Spinner,
   EmptyState, Modal, ConfirmDialog, ProgressBar, SectionHead
 } from '../components/UI';
-import { CURRENT_USER } from '../components/AppShell';
+import { useAuth } from '../context/AuthContext';
 import { exportCapaRecordPDF, mergeUploadedPdfsIntoPdf, downloadPdfBytes } from '../utils/pdfExport';
 import dynamic from 'next/dynamic';
 const RichTextEditor = dynamic(() => import('../components/RichTextEditor'), { ssr: false });
@@ -92,6 +92,7 @@ function formatBytes(b) {
 }
 
 export default function Capas() {
+  const { user: CURRENT_USER } = useAuth();
   const qc = useQueryClient();
   const [search, setSearch]       = useState('');
   const [filterStatus, setFSt]    = useState('');

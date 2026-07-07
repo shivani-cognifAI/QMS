@@ -9,16 +9,16 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const db = getDb();
-      const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+      const doc = await db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
       if (!doc) { db.close(); return res.status(404).json({ error: 'Document not found' }); }
-      const history = db.prepare('SELECT * FROM version_history WHERE doc_id = ? ORDER BY changed_at DESC').all(id);
+      const history = await db.prepare('SELECT * FROM version_history WHERE doc_id = ? ORDER BY changed_at DESC').all(id);
       db.close();
       return res.json({ ...doc, evidence: JSON.parse(doc.evidence || '[]'), history });
     }
 
     if (req.method === 'PUT') {
       const db = getDb();
-      const old = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+      const old = await db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
       if (!old) { db.close(); return res.status(404).json({ error: 'Document not found' }); }
       if (old.status === 'Retired') { db.close(); return res.status(400).json({ error: 'This document is Retired and was approved as such — its status and content can no longer be changed.' }); }
 
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
 
       let owner = null;
       if (owner_id) {
-        const user = db.prepare('SELECT name FROM users WHERE id = ?').get(owner_id);
+        const user = await db.prepare('SELECT name FROM users WHERE id = ?').get(owner_id);
         if (user) owner = user.name;
       }
       const actorName = updated_by || owner || 'System';
@@ -45,7 +45,7 @@ export default async function handler(req, res) {
       let version_date = old.version_date;
 
       if (versionBumped && old.status === 'Approved') {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO archived_versions
             (doc_id, doc_title, version, version_date, status, type, standard, clause,
              owner, review_date, scope, evidence, archived_at, archived_by, workflow_id, change_note)
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
         }
       }
 
-      db.prepare(`
+      await db.prepare(`
         UPDATE documents SET
           id=@id, title=@title, type=@type, standard=@standard, clause=@clause,
           version=@version, version_date=@version_date, status=@status,
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
 
       const justRetired = newStatus === 'Retired' && old.status !== 'Retired';
       if (!justRetired && (version !== old.version || change_note)) {
-        db.prepare(`INSERT INTO version_history (doc_id, version, author, change_note) VALUES (?, ?, ?, ?)`)
+        await db.prepare(`INSERT INTO version_history (doc_id, version, author, change_note) VALUES (?, ?, ?, ?)`)
           .run(newId || id, version || old.version, actorName, change_note || `Updated to v${version || old.version}`);
       }
 
@@ -81,17 +81,17 @@ export default async function handler(req, res) {
         createNotification(db, { userId: owner_id, type: 'document_assigned', title: `Document assigned to you — ${newId || id}`, message: title, link: '/documents', createdBy: actorName });
       }
 
-      const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(newId || id);
+      const doc = await db.prepare('SELECT * FROM documents WHERE id = ?').get(newId || id);
       db.close();
       return res.json({ ...doc, evidence: JSON.parse(doc.evidence || '[]') });
     }
 
     if (req.method === 'DELETE') {
       const db = getDb();
-      const doc = db.prepare('SELECT id, status FROM documents WHERE id = ?').get(id);
+      const doc = await db.prepare('SELECT id, status FROM documents WHERE id = ?').get(id);
       if (!doc) { db.close(); return res.status(404).json({ error: 'Document not found' }); }
       if (doc.status === 'Retired') { db.close(); return res.status(400).json({ error: 'Retired documents are locked and cannot be deleted.' }); }
-      db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+      await db.prepare('DELETE FROM documents WHERE id = ?').run(id);
       db.close();
       return res.json({ message: 'Document deleted' });
     }

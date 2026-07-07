@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    const rows = db.prepare('SELECT * FROM archived_versions WHERE doc_id = ? ORDER BY archived_at DESC').all(docId);
+    const rows = await db.prepare('SELECT * FROM archived_versions WHERE doc_id = ? ORDER BY archived_at DESC').all(docId);
     db.close();
     res.json(rows.map(r => ({ ...r, evidence: JSON.parse(r.evidence || '[]') })));
   } catch (err) {

@@ -24,7 +24,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const db = getDb();
-      const row = db.prepare('SELECT * FROM settings WHERE key=?').get(key);
+      const row = await db.prepare('SELECT * FROM settings WHERE key=?').get(key);
       db.close();
       return res.json({ key, value: row ? row.value : null });
     }
@@ -39,16 +39,16 @@ export default async function handler(req, res) {
         if (conflict) return res.status(400).json({ error: `Overlapping date ranges: ${conflict}` });
       }
       const db = getDb();
-      const existing = db.prepare('SELECT key FROM settings WHERE key=?').get(key);
-      if (existing) db.prepare('UPDATE settings SET value=? WHERE key=?').run(value, key);
-      else          db.prepare('INSERT INTO settings (key, value) VALUES (?,?)').run(key, value);
+      const existing = await db.prepare('SELECT key FROM settings WHERE key=?').get(key);
+      if (existing) await db.prepare('UPDATE settings SET value=? WHERE key=?').run(value, key);
+      else          await db.prepare('INSERT INTO settings (key, value) VALUES (?,?)').run(key, value);
       db.close();
       return res.json({ key, value });
     }
 
     if (req.method === 'DELETE') {
       const db = getDb();
-      db.prepare('DELETE FROM settings WHERE key=?').run(key);
+      await db.prepare('DELETE FROM settings WHERE key=?').run(key);
       db.close();
       return res.json({ message: 'Setting removed' });
     }

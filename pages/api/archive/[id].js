@@ -7,7 +7,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const db = getDb();
-      const row = db.prepare('SELECT * FROM archived_versions WHERE id = ?').get(id);
+      const row = await db.prepare('SELECT * FROM archived_versions WHERE id = ?').get(id);
       db.close();
       if (!row) return res.status(404).json({ error: 'Archived version not found' });
       return res.json({ ...row, evidence: JSON.parse(row.evidence || '[]') });
@@ -15,9 +15,9 @@ export default async function handler(req, res) {
 
     if (req.method === 'DELETE') {
       const db = getDb();
-      const row = db.prepare('SELECT id FROM archived_versions WHERE id = ?').get(id);
+      const row = await db.prepare('SELECT id FROM archived_versions WHERE id = ?').get(id);
       if (!row) { db.close(); return res.status(404).json({ error: 'Archived version not found' }); }
-      db.prepare('DELETE FROM archived_versions WHERE id = ?').run(id);
+      await db.prepare('DELETE FROM archived_versions WHERE id = ?').run(id);
       db.close();
       return res.json({ message: 'Archived version permanently deleted' });
     }

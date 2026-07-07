@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   try {
     await ensureDb();
     const db = getDb();
-    const file = db.prepare('SELECT * FROM document_files WHERE id=?').get(fileId);
+    const file = await db.prepare('SELECT * FROM document_files WHERE id=?').get(fileId);
     db.close();
     if (!file) return res.status(404).json({ error: 'File not found' });
     if (!isWordFile(file.mimetype, file.originalname)) return res.status(400).json({ error: 'Not a Word document' });

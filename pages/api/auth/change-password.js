@@ -1,4 +1,4 @@
-import { ensureDb, getDb } from '../../../lib/db';
+﻿import { ensureDb, getDb } from '../../../lib/db';
 import bcrypt from 'bcryptjs';
 const { requireAuth, signToken, setCookieHeader } = require('../../../lib/auth');
 
@@ -11,8 +11,8 @@ async function handler(req, res) {
     await ensureDb();
     const db = getDb();
     const hash = await bcrypt.hash(newPassword, 10);
-    db.prepare('UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?').run(hash, req.user.id);
-    const user = db.prepare('SELECT id,name,email,role,system_role FROM users WHERE id=?').get(req.user.id);
+    await db.prepare('UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?').run(hash, req.user.id);
+    const user = await db.prepare('SELECT id,name,email,role,system_role FROM users WHERE id=?').get(req.user.id);
     db.close();
 
     // Issue a fresh token with must_change_password cleared

@@ -17,9 +17,9 @@ export default async function handler(req, res) {
     if (!change_note) return res.status(400).json({ error: 'change_note is required' });
     await ensureDb();
     const db = getDb();
-    const file = db.prepare('SELECT * FROM document_files WHERE id=?').get(fileId);
+    const file = await db.prepare('SELECT * FROM document_files WHERE id=?').get(fileId);
     if (!file) { db.close(); return res.status(404).json({ error: 'File not found' }); }
-    const doc = db.prepare('SELECT * FROM documents WHERE id=?').get(file.doc_id);
+    const doc = await db.prepare('SELECT * FROM documents WHERE id=?').get(file.doc_id);
     if (!doc) { db.close(); return res.status(404).json({ error: 'Document not found' }); }
 
     let newHash = file.file_hash, newSize = file.size, newData = file.file_data || null;
@@ -32,13 +32,13 @@ export default async function handler(req, res) {
     const parts = String(doc.version).split('.');
     const newVersion = parts.length >= 2 ? `${parts[0]}.${Number(parts[1]) + 1}` : `${doc.version}.1`;
 
-    db.transaction(() => {
-      db.prepare('UPDATE document_files SET file_hash=?,size=?,file_data=?,uploaded_at=datetime("now") WHERE id=?').run(newHash, newSize, newData, file.id);
-      db.prepare(`UPDATE documents SET version=?,status='Draft',version_date=NULL,updated_at=datetime('now') WHERE id=?`).run(newVersion, file.doc_id);
-      db.prepare(`INSERT INTO version_history (doc_id,version,author,change_note) VALUES (?,?,?,?)`).run(file.doc_id, newVersion, confirmed_by || 'System', `File change confirmed by ${confirmed_by}. ${change_note}. Document reset to Draft for re-approval.`);
-    })();
+    await db.transaction(async () => {
+      await db.prepare('UPDATE document_files SET file_hash=?,size=?,file_data=?,uploaded_at=datetime("now") WHERE id=?').run(newHash, newSize, newData, file.id);
+      await db.prepare(`UPDATE documents SET version=?,status='Draft',version_date=NULL,updated_at=datetime('now') WHERE id=?`).run(newVersion, file.doc_id);
+      await db.prepare(`INSERT INTO version_history (doc_id,version,author,change_note) VALUES (?,?,?,?)`).run(file.doc_id, newVersion, confirmed_by || 'System', `File change confirmed by ${confirmed_by}. ${change_note}. Document reset to Draft for re-approval.`);
+    });
 
-    const updatedDoc = db.prepare('SELECT * FROM documents WHERE id=?').get(file.doc_id);
+    const updatedDoc = await db.prepare('SELECT * FROM documents WHERE id=?').get(file.doc_id);
     db.close();
     res.json({ document: { ...updatedDoc, evidence: JSON.parse(updatedDoc.evidence || '[]') }, newVersion });
   } catch (err) {
