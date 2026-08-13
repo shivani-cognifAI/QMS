@@ -38,12 +38,15 @@ async function handler(req, res) {
       const user = await db.prepare('SELECT id,name,email,role,system_role,must_change_password,created_at FROM users WHERE id=?').get(result.lastInsertRowid);
       db.close();
 
-      // Send OTP email — non-blocking so the API responds fast
-      sendOtpEmail({ to: email, name, otp }).catch(err =>
-        console.error('OTP email failed:', err.message)
-      );
+      let emailSent = false;
+      try {
+        await sendOtpEmail({ to: email, name, otp });
+        emailSent = true;
+      } catch (err) {
+        console.error('OTP email failed:', err.message);
+      }
 
-      return res.status(201).json(user);
+      return res.status(201).json({ ...user, email_sent: emailSent, otp: emailSent ? undefined : otp });
     }
 
     res.status(405).json({ error: 'Method not allowed' });

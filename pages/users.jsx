@@ -27,15 +27,20 @@ export default function UsersPage() {
   const [delTarget, setDel]       = useState(null);
   const [resetTarget, setReset]   = useState(null);
   const [resetting, setResetting] = useState(false);
+  const [otpReveal, setOtpReveal] = useState(null); // { name, email, otp, isReset }
 
   const { data: users = [], isLoading } = useQuery({ queryKey:['users'], queryFn: getUsers });
 
   const saveMut = useMutation({
     mutationFn: data => editItem ? updateUser(editItem.id, data) : createUser(data),
-    onSuccess: (_, vars) => {
+    onSuccess: (data, vars) => {
       qc.invalidateQueries(['users']);
       if (!editItem) {
-        toast.success('User created — OTP sent to their email');
+        if (data.email_sent === false && data.otp) {
+          setOtpReveal({ name: data.name, email: data.email, otp: data.otp, isReset: false });
+        } else {
+          toast.success('User created — OTP sent to their email');
+        }
       } else {
         toast.success('User updated');
       }
@@ -60,8 +65,12 @@ export default function UsersPage() {
     if (!resetTarget) return;
     setResetting(true);
     try {
-      await axios.post(`/api/users/${resetTarget.id}`);
-      toast.success(`Password reset — OTP emailed to ${resetTarget.email}`);
+      const { data } = await axios.post(`/api/users/${resetTarget.id}`);
+      if (data.email_sent === false && data.otp) {
+        setOtpReveal({ name: resetTarget.name, email: resetTarget.email, otp: data.otp, isReset: true });
+      } else {
+        toast.success(`Password reset — OTP emailed to ${resetTarget.email}`);
+      }
       setReset(null);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Reset failed');
@@ -110,7 +119,7 @@ export default function UsersPage() {
 
       <div style={{ background:'var(--accent-bg)', border:'1px solid var(--accent-bdr)', borderRadius:'var(--radius-md)', padding:'10px 14px', fontSize:13, color:'var(--accent)', marginBottom:16 }}>
         {isAdmin
-          ? 'Add a user to invite them — they will receive a one-time password by email to log in and set their own password.'
+          ? 'Add a user to invite them — they receive a one-time password by email (or copy it from the screen if email is not configured).'
           : 'System role controls what a user can do across the entire QMS.'}
       </div>
 
@@ -233,6 +242,30 @@ export default function UsersPage() {
         title="Remove User"
         message={`Remove "${delTarget?.name}"? They will no longer be able to log in.`}
         onConfirm={() => delMut.mutate(delTarget.id)}/>
+
+      {/* OTP fallback modal — shown when email delivery fails */}
+      <Modal open={!!otpReveal} onClose={() => setOtpReveal(null)}
+        title={otpReveal?.isReset ? 'Password Reset — Copy OTP' : 'User Created — Copy OTP'}>
+        <div style={{ background:'var(--amber-bg)', border:'1px solid #f0c060', borderRadius:8, padding:'12px 14px', marginBottom:16, fontSize:13, color:'#9A5700' }}>
+          Email delivery failed. Share this one-time password with <strong>{otpReveal?.name}</strong> ({otpReveal?.email}) directly — it will not be shown again.
+        </div>
+        <div style={{ textAlign:'center', margin:'20px 0' }}>
+          <div style={{ fontSize:11, fontWeight:600, color:'var(--text-2)', letterSpacing:'.08em', textTransform:'uppercase', marginBottom:8 }}>One-Time Password</div>
+          <div style={{ fontSize:32, fontWeight:700, letterSpacing:8, fontFamily:'monospace', color:'var(--text-1)', userSelect:'all', background:'var(--bg-hover)', padding:'16px 24px', borderRadius:8, display:'inline-block' }}>
+            {otpReveal?.otp}
+          </div>
+        </div>
+        <div style={{ fontSize:12, color:'var(--text-2)', textAlign:'center', marginBottom:16 }}>
+          They sign in at <strong>/login</strong> with their email and this OTP, then set a permanent password.
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-primary" onClick={() => {
+            navigator.clipboard?.writeText(otpReveal?.otp);
+            toast.success('OTP copied to clipboard');
+            setOtpReveal(null);
+          }}>Copy & Close</button>
+        </div>
+      </Modal>
     </div>
   );
 }

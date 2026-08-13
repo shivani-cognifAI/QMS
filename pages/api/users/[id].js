@@ -44,10 +44,14 @@ async function handler(req, res) {
       const hash = await bcrypt.hash(otp, 10);
       await db.prepare('UPDATE users SET password_hash=?,must_change_password=1 WHERE id=?').run(hash, id);
       db.close();
-      sendPasswordResetEmail({ to: user.email, name: user.name, otp }).catch(err =>
-        console.error('Reset email failed:', err.message)
-      );
-      return res.json({ message: 'Password reset — OTP sent to user email' });
+      let emailSent = false;
+      try {
+        await sendPasswordResetEmail({ to: user.email, name: user.name, otp });
+        emailSent = true;
+      } catch (err) {
+        console.error('Reset email failed:', err.message);
+      }
+      return res.json({ message: emailSent ? 'Password reset — OTP sent to user email' : 'Password reset', email_sent: emailSent, otp: emailSent ? undefined : otp });
     }
 
     res.status(405).json({ error: 'Method not allowed' });
