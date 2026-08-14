@@ -454,7 +454,7 @@ export default function Documents() {
         JSON.stringify(editDoc.evidence || []) === JSON.stringify(evidenceArr || []) &&
         (editDoc.status || '') !== (form.status || '');
 
-      if (anyChange && !versionManuallyChanged && !onlyStatusChanged) {
+      if (editDoc.status === 'Approved' && anyChange && !versionManuallyChanged && !onlyStatusChanged) {
         const newVersion = bumpVersion(editDoc.version);
         setVersionBumpPrompt({
           oldVersion: editDoc.version,
