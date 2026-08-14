@@ -150,19 +150,34 @@ export function htmlToRichBlocks(html) {
     return 'left';
   }
 
+  function extractTableRows(tableNode) {
+    const rows = [];
+    for (const tr of tableNode.querySelectorAll('tr')) {
+      const cells = [];
+      for (const cell of tr.querySelectorAll('td, th')) {
+        const text = (cell.textContent || '').replace(/\s+/g, ' ').trim();
+        const colspan = parseInt(cell.getAttribute('colspan') || '1', 10) || 1;
+        cells.push(colspan > 1 ? { content: text, colSpan: colspan } : text);
+      }
+      if (cells.length) rows.push(cells);
+    }
+    return rows;
+  }
+
   function walkTopLevel(container) {
     for (const node of container.childNodes) {
       if (node.nodeType === 1 && node.tagName.toLowerCase() === 'table') {
-        const rows = [];
-        for (const tr of node.querySelectorAll('tr')) {
-          const cells = [];
-          for (const cell of tr.querySelectorAll('td, th')) {
-            const text = (cell.textContent || '').replace(/\s+/g, ' ').trim();
-            const colspan = parseInt(cell.getAttribute('colspan') || '1', 10) || 1;
-            cells.push(colspan > 1 ? { content: text, colSpan: colspan } : text);
-          }
-          if (cells.length) rows.push(cells);
-        }
+        const rows = extractTableRows(node);
+        if (rows.length) blocks.push({ type: 'table', rows });
+      } else if (node.nodeType === 1 && node.classList && node.classList.contains('ql-table-html-blot')) {
+        // Tables inserted/pasted via the editor are saved as
+        // <div class="ql-table-html-blot"><table>...</table></div> (see
+        // RichTextEditor.jsx's TableHtmlBlot) — the <table> isn't a direct
+        // child of the content root, so it must be unwrapped here or it
+        // falls through to the generic paragraph path below and loses its
+        // row/column structure entirely.
+        const tableEl = node.querySelector('table');
+        const rows = tableEl ? extractTableRows(tableEl) : [];
         if (rows.length) blocks.push({ type: 'table', rows });
       } else if (node.nodeType === 1 && node.tagName.toLowerCase() === 'img') {
         // A bare top-level <img> (uncommon — Quill normally wraps images in
