@@ -31,6 +31,16 @@ export default async function handler(req, res) {
       if (!capa) { db.close(); return res.status(404).json({ error: 'CAPA record not found' }); }
       const existingActive = await db.prepare(`SELECT id FROM capa_workflows WHERE capa_id = ? AND status = 'In Progress'`).get(capa_id);
       if (existingActive) { db.close(); return res.status(400).json({ error: 'This record already has an approval in progress' }); }
+
+      const missingActions = [];
+      if (!capa.corrective_completion_date) missingActions.push('Corrective Action');
+      if (!capa.preventive_completion_date) missingActions.push('Preventive Action');
+      if (!capa.verification_date)          missingActions.push('Verification of Effectiveness');
+      if (missingActions.length > 0) {
+        db.close();
+        const list = missingActions.join(', ');
+        return res.status(400).json({ error: `${list} ${missingActions.length > 1 ? 'are' : 'is'} not completed yet — enter its completion date before submitting for approval.` });
+      }
       for (const aid of approver_ids) {
         const user = await db.prepare('SELECT id FROM users WHERE id = ?').get(aid);
         if (!user) { db.close(); return res.status(400).json({ error: `User ID ${aid} not found` }); }

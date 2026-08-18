@@ -31,7 +31,11 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { id, type, title, detail, clause, source, owner_id, due_date, root_cause, action, status, pct_complete, created_by } = req.body;
+      const {
+        id, type, title, detail, clause, source, owner_id, due_date, root_cause, action, status, pct_complete, created_by,
+        corrective_due_date, corrective_completion_date, preventive_action, preventive_due_date, preventive_completion_date,
+        verification_comments, verification_date,
+      } = req.body;
       if (!id || !title || !type || !status) return res.status(400).json({ error: 'id, title, type, status are required' });
       if (!['NCR','CAPA','Observation','Opportunity for Improvement'].includes(type)) return res.status(400).json({ error: 'Invalid type' });
       if (!['In Progress','Waiting for Approval','Approved & Closed','Overdue'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
@@ -43,8 +47,28 @@ export default async function handler(req, res) {
       let owner = null;
       if (owner_id) { const user = await db.prepare('SELECT name FROM users WHERE id = ?').get(owner_id); if (user) owner = user.name; }
 
-      await db.prepare(`INSERT INTO capas (id, type, title, detail, clause, source, owner, owner_id, due_date, root_cause, action, status, pct_complete, created_by, updated_by) VALUES (@id, @type, @title, @detail, @clause, @source, @owner, @owner_id, @due_date, @root_cause, @action, @status, @pct_complete, @created_by, @created_by)`)
-        .run({ id, type, title, detail: detail || null, clause: clause || null, source: source || null, owner, owner_id: owner_id || null, due_date: due_date || null, root_cause: root_cause || null, action: action || null, status, pct_complete: pct_complete || 0, created_by: created_by || 'Unknown' });
+      // A completion date entered at creation time is attributed to the creator.
+      const corrective_completed_by = corrective_completion_date ? (created_by || 'Unknown') : null;
+      const preventive_completed_by = preventive_completion_date ? (created_by || 'Unknown') : null;
+      const verified_by             = verification_date          ? (created_by || 'Unknown') : null;
+
+      await db.prepare(`INSERT INTO capas (
+          id, type, title, detail, clause, source, owner, owner_id, due_date, root_cause, action, status, pct_complete, created_by, updated_by,
+          corrective_due_date, corrective_completion_date, corrective_completed_by,
+          preventive_action, preventive_due_date, preventive_completion_date, preventive_completed_by,
+          verification_comments, verification_date, verified_by
+        ) VALUES (
+          @id, @type, @title, @detail, @clause, @source, @owner, @owner_id, @due_date, @root_cause, @action, @status, @pct_complete, @created_by, @created_by,
+          @corrective_due_date, @corrective_completion_date, @corrective_completed_by,
+          @preventive_action, @preventive_due_date, @preventive_completion_date, @preventive_completed_by,
+          @verification_comments, @verification_date, @verified_by
+        )`)
+        .run({
+          id, type, title, detail: detail || null, clause: clause || null, source: source || null, owner, owner_id: owner_id || null, due_date: due_date || null, root_cause: root_cause || null, action: action || null, status, pct_complete: pct_complete || 0, created_by: created_by || 'Unknown',
+          corrective_due_date: corrective_due_date || null, corrective_completion_date: corrective_completion_date || null, corrective_completed_by,
+          preventive_action: preventive_action || null, preventive_due_date: preventive_due_date || null, preventive_completion_date: preventive_completion_date || null, preventive_completed_by,
+          verification_comments: verification_comments || null, verification_date: verification_date || null, verified_by,
+        });
 
       // Sync auto-numbering sequence
       const cfg = await getNumberingConfig(db, type);

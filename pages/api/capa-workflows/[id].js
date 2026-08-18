@@ -18,6 +18,7 @@ export default async function handler(req, res) {
       const db = getDb();
       const wf = await db.prepare('SELECT * FROM capa_workflows WHERE id = ?').get(id);
       if (!wf) { db.close(); return res.status(404).json({ error: 'Workflow not found' }); }
+      if (wf.status !== 'In Progress') { db.close(); return res.status(400).json({ error: `Workflow is "${wf.status}" — only an in-progress approval can be withdrawn.` }); }
       await db.transaction(async () => {
         await db.prepare(`UPDATE capa_workflows SET status='Cancelled', completed_at=datetime('now') WHERE id=?`).run(wf.id);
         await db.prepare(`UPDATE capas SET approval_status='Not Submitted', updated_at=datetime('now') WHERE id=?`).run(wf.capa_id);

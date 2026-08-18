@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle, XCircle, Paperclip, Download, Eye } from 'lucide-react';
+import { X, CheckCircle, XCircle, Paperclip, Download, Eye, FileDown } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getCapa, getCapaFiles, downloadFile, fetchFileBytes } from '../api';
+import { getCapa, getCapaFiles, downloadFile, fetchFileBytes, getCapaWorkflows, getSettings } from '../api';
 import { capaStatusPill, approvalStatusPill, fmtDate, fmtDateTime, Spinner, SectionHead } from './UI';
+import { exportCapaRecordPDF, mergeUploadedPdfsIntoPdf, downloadPdfBytes } from '../utils/pdfExport';
+
+function isPdfFile(mimetype = '', originalname = '') {
+  const ext = (originalname || '').toLowerCase();
+  return mimetype === 'application/pdf' || ext.endsWith('.pdf');
+}
 
 function formatBytes(b) {
   if (b < 1024) return `${b} B`;
@@ -30,7 +36,10 @@ function shouldShowApprovalPill(c) {
 export default function CapaPreviewModal({ capaId, step, onClose, onApprove, onReject }) {
   const [capa, setCapa]       = useState(null);
   const [files, setFiles]     = useState([]);
+  const [workflowHistory, setWorkflowHistory] = useState([]);
+  const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const [viewCreatedDoc, setViewCreatedDoc] = useState(null);
   const [viewUploadedFile, setViewUploadedFile] = useState(null);
   const [viewFileBlobUrl, setViewFileBlobUrl] = useState(null);
@@ -62,13 +71,17 @@ export default function CapaPreviewModal({ capaId, step, onClose, onApprove, onR
     async function load() {
       setLoading(true);
       try {
-        const [capaData, fileData] = await Promise.all([
+        const [capaData, fileData, wfHistory, settingsData] = await Promise.all([
           getCapa(capaId),
           getCapaFiles(capaId).catch(() => []),
+          getCapaWorkflows({ capa_id: capaId }).catch(() => []),
+          getSettings().catch(() => ({})),
         ]);
         if (cancelled) return;
         setCapa(capaData);
         setFiles(fileData);
+        setWorkflowHistory(wfHistory);
+        setSettings(settingsData);
       } catch (err) {
         toast.error('Failed to load record for preview');
         onClose?.();
@@ -79,6 +92,45 @@ export default function CapaPreviewModal({ capaId, step, onClose, onApprove, onR
     load();
     return () => { cancelled = true; };
   }, [capaId]);
+
+  async function handleDownloadPDF() {
+    if (!capa) return;
+    setDownloading(true);
+    try {
+      const evidenceAttachments = [];
+      const mergePdfs = [];
+      for (const file of files) {
+        if (file.mimetype === 'application/x-qms-document') {
+          if ((file.content_html || '').trim()) {
+            evidenceAttachments.push({ title: file.originalname, html: file.content_html });
+          }
+        } else if (isPdfFile(file.mimetype, file.originalname)) {
+          mergePdfs.push({ fileId: file.id, filename: file.originalname });
+        }
+      }
+
+      const buildResult = exportCapaRecordPDF(capa, workflowHistory, settings, evidenceAttachments, mergePdfs);
+
+      if (!buildResult || !buildResult.needsMerge) {
+        toast.success('PDF downloaded');
+        return;
+      }
+
+      const mergeToast = toast.loading('Merging uploaded PDF evidence…');
+      const { bytes, filename, failedMerges } = await mergeUploadedPdfsIntoPdf(buildResult, fetchFileBytes);
+      downloadPdfBytes(bytes, filename);
+      toast.dismiss(mergeToast);
+      if (failedMerges.length > 0) {
+        toast.error(`PDF downloaded, but ${failedMerges.length} evidence file(s) couldn't be merged`, { duration: 7000 });
+      } else {
+        toast.success('PDF downloaded');
+      }
+    } catch (err) {
+      toast.error('Failed to generate PDF — please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -115,12 +167,34 @@ export default function CapaPreviewModal({ capaId, step, onClose, onApprove, onR
               <div>
                 <SectionHead>Corrective Action</SectionHead>
                 <p style={{ fontSize:13, color:'var(--text-2)' }}>{capa.action || 'No action recorded yet.'}</p>
+                <div style={{ fontSize:12, color:'var(--text-2)', marginTop:4, display:'flex', gap:14 }}>
+                  <span>Due {fmtDate(capa.corrective_due_date)}</span>
+                  <span>Completed {capa.corrective_completion_date ? `${fmtDate(capa.corrective_completion_date)} by ${capa.corrective_completed_by || 'Unknown'}` : '—'}</span>
+                </div>
                 {capa.closed_at && (
                   <>
                     <SectionHead style={{ marginTop:12 }}>Closed On</SectionHead>
                     <p style={{ fontSize:13 }}>{fmtDateTime(capa.closed_at)}</p>
                   </>
                 )}
+              </div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, marginBottom:14 }}>
+              <div>
+                <SectionHead>Preventive Action</SectionHead>
+                <p style={{ fontSize:13, color:'var(--text-2)' }}>{capa.preventive_action || 'No action recorded yet.'}</p>
+                <div style={{ fontSize:12, color:'var(--text-2)', marginTop:4, display:'flex', gap:14 }}>
+                  <span>Due {fmtDate(capa.preventive_due_date)}</span>
+                  <span>Completed {capa.preventive_completion_date ? `${fmtDate(capa.preventive_completion_date)} by ${capa.preventive_completed_by || 'Unknown'}` : '—'}</span>
+                </div>
+              </div>
+              <div>
+                <SectionHead>Verify Effectiveness of Implemented Action</SectionHead>
+                <p style={{ fontSize:13, color:'var(--text-2)' }}>{capa.verification_comments || 'Not yet verified.'}</p>
+                <div style={{ fontSize:12, color:'var(--text-2)', marginTop:4 }}>
+                  <span>Verified {capa.verification_date ? `${fmtDate(capa.verification_date)} by ${capa.verified_by || 'Unknown'}` : '—'}</span>
+                </div>
               </div>
             </div>
 
@@ -154,6 +228,9 @@ export default function CapaPreviewModal({ capaId, step, onClose, onApprove, onR
 
             <div className="modal-footer" style={{ paddingTop:0, border:'none', marginTop:0 }}>
               <button className="btn" onClick={onClose}>Close</button>
+              <button className="btn" onClick={handleDownloadPDF} disabled={downloading}>
+                <FileDown size={14}/> {downloading ? 'Preparing…' : 'Download PDF'}
+              </button>
               {step && (
                 <>
                   <button className="btn btn-green" onClick={() => onApprove?.(step)}>

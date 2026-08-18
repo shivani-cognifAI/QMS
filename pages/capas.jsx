@@ -10,14 +10,13 @@ import {
   getCapas, createCapa, updateCapa, deleteCapa, getNextCapaId,
   getUsers, submitCapaWorkflow, getCapaRecordWorkflow, getCapaWorkflows, approveCapaStep, rejectCapaStep, cancelCapaWorkflow,
   getCapaFiles, uploadCapaFile, createCapaAttachment, updateDocAttachment, downloadFile, deleteFile,
-  fetchFileBytes, getSettings,
 } from '../api';
 import {
   capaStatusPill, approvalStatusPill, fmtDate, fmtDateTime, Spinner,
   EmptyState, Modal, ConfirmDialog, ProgressBar, SectionHead
 } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
-import { exportCapaRecordPDF, mergeUploadedPdfsIntoPdf, downloadPdfBytes } from '../utils/pdfExport';
+import CapaPreviewModal from '../components/CapaPreviewModal';
 import dynamic from 'next/dynamic';
 const RichTextEditor = dynamic(() => import('../components/RichTextEditor'), { ssr: false });
 
@@ -30,7 +29,18 @@ const EMPTY = {
   id: '', type: 'NCR', title: '', detail: '', clause: '',
   source: 'Internal Audit', owner: '', owner_id: '', due_date: '',
   root_cause: '', action: '', status: 'In Progress', pct_complete: 0,
+  corrective_due_date: '', corrective_completion_date: '',
+  preventive_action: '', preventive_due_date: '', preventive_completion_date: '',
+  verification_comments: '', verification_date: '',
 };
+
+function getIncompleteCapaActions(c) {
+  const missing = [];
+  if (!c.corrective_completion_date) missing.push('Corrective Action');
+  if (!c.preventive_completion_date) missing.push('Preventive Action');
+  if (!c.verification_date)          missing.push('Verification of Effectiveness');
+  return missing;
+}
 
 function shouldShowApprovalPill(c) {
   if (!c.approval_status || c.approval_status === 'Not Submitted') return false;
@@ -59,6 +69,15 @@ function buildAuditTrail(capa, workflowHistory) {
   if (capa.updated_at && capa.updated_by && capa.updated_at !== capa.created_at) {
     entries.push({ at: capa.updated_at, label: 'Last edited', by: capa.updated_by, kind: 'edit' });
   }
+  if (capa.corrective_completion_date) {
+    entries.push({ at: capa.corrective_completion_date, label: 'Corrective Action completed', by: capa.corrective_completed_by || 'Unknown', kind: 'edit' });
+  }
+  if (capa.preventive_completion_date) {
+    entries.push({ at: capa.preventive_completion_date, label: 'Preventive Action completed', by: capa.preventive_completed_by || 'Unknown', kind: 'edit' });
+  }
+  if (capa.verification_date) {
+    entries.push({ at: capa.verification_date, label: 'Effectiveness verified', by: capa.verified_by || 'Unknown', comment: capa.verification_comments, kind: 'edit' });
+  }
   for (const wf of (workflowHistory || [])) {
     entries.push({ at: wf.created_at, label: 'Submitted for approval', by: wf.submitted_by, kind: 'submit' });
     for (const step of (wf.steps || [])) {
@@ -80,10 +99,6 @@ function fileIcon(mimetype = '') {
   if (mimetype.includes('pdf'))   return <FileText size={14} color="#CC0000"/>;
   if (mimetype.includes('image')) return <FileText size={14} color="#9A5700"/>;
   return <File size={14}/>;
-}
-function isPdfFile(mimetype = '', originalname = '') {
-  const ext = (originalname || '').toLowerCase();
-  return mimetype === 'application/pdf' || ext.endsWith('.pdf');
 }
 function formatBytes(b) {
   if (b < 1024) return `${b} B`;
@@ -119,6 +134,7 @@ export default function Capas() {
   const [uploading, setUploading] = useState(false);
   const [filesId, setFilesId]     = useState(null);
   const [delFile, setDelFile]     = useState(null);
+  const [previewCapaId, setPreviewCapaId] = useState(null);
 
   const { data: capas = [], isLoading } = useQuery({
     queryKey: ['capas', search, filterStatus, filterType],
@@ -254,6 +270,11 @@ export default function Capas() {
     const movingToWaitingForApproval =
       editItem && editItem.status === 'In Progress' && form.status === 'Waiting for Approval';
     if (movingToWaitingForApproval) {
+      const missing = getIncompleteCapaActions(form);
+      if (missing.length > 0) {
+        toast.error(`${missing.join(', ')} ${missing.length > 1 ? 'are' : 'is'} not completed yet — enter its completion date before changing status.`);
+        return;
+      }
       setConfirmSendModal(form);
     } else {
       saveMut.mutate({ ...form, created_by: CURRENT_USER.name, updated_by: CURRENT_USER.name });
@@ -348,50 +369,6 @@ export default function Capas() {
     }
   }
 
-  async function handleDownloadCapaPDF(c) {
-    const dlToast = toast.loading('Preparing PDF…');
-    try {
-      const [workflows, files, settings] = await Promise.all([
-        getCapaWorkflows({ capa_id: c.id }),
-        getCapaFiles(c.id).catch(() => []),
-        getSettings().catch(() => ({})),
-      ]);
-
-      const evidenceAttachments = [];
-      const mergePdfs = [];
-      for (const file of files) {
-        if (file.mimetype === 'application/x-qms-document') {
-          if ((file.content_html || '').trim()) {
-            evidenceAttachments.push({ title: file.originalname, html: file.content_html });
-          }
-        } else if (isPdfFile(file.mimetype, file.originalname)) {
-          mergePdfs.push({ fileId: file.id, filename: file.originalname });
-        }
-      }
-
-      const buildResult = exportCapaRecordPDF(c, workflows, settings, evidenceAttachments, mergePdfs);
-      toast.dismiss(dlToast);
-
-      if (!buildResult || !buildResult.needsMerge) {
-        toast.success('PDF downloaded');
-        return;
-      }
-
-      const mergeToast = toast.loading('Merging uploaded PDF evidence…');
-      const { bytes, filename, failedMerges } = await mergeUploadedPdfsIntoPdf(buildResult, fetchFileBytes);
-      downloadPdfBytes(bytes, filename);
-      toast.dismiss(mergeToast);
-      if (failedMerges.length > 0) {
-        toast.error(`PDF downloaded, but ${failedMerges.length} evidence file(s) couldn't be merged`, { duration: 7000 });
-      } else {
-        toast.success('PDF downloaded');
-      }
-    } catch (err) {
-      toast.dismiss(dlToast);
-      toast.error('Failed to generate PDF — please try again.');
-    }
-  }
-
   const inProgress = capas.filter(c => c.status === 'In Progress').length;
   const waiting     = capas.filter(c => c.status === 'Waiting for Approval').length;
   const closed      = capas.filter(c => c.status === 'Approved & Closed').length;
@@ -468,12 +445,18 @@ export default function Capas() {
                     </div>
                   </div>
                   {(!c.approval_status || c.approval_status === 'Not Submitted' || c.approval_status === 'Rejected') && (
-                    <button className="btn btn-ghost btn-icon btn-sm" title="Submit for approval" onClick={e=>{ e.stopPropagation(); setSubmitModal(c); }}><Send size={14}/></button>
+                    <button className="btn btn-ghost btn-icon btn-sm" title="Submit for approval" onClick={e=>{
+                      e.stopPropagation();
+                      const missing = getIncompleteCapaActions(c);
+                      if (missing.length > 0) {
+                        toast.error(`${missing.join(', ')} ${missing.length > 1 ? 'are' : 'is'} not completed yet — enter its completion date before submitting for approval.`);
+                        return;
+                      }
+                      setSubmitModal(c);
+                    }}><Send size={14}/></button>
                   )}
                   <button className="btn btn-ghost btn-icon btn-sm" title="Evidence" onClick={e=>{ e.stopPropagation(); setExpanded(c.id); setFilesId(filesId===c.id?null:c.id); }}><Paperclip size={14}/></button>
-                  {isCapaLocked(c) && (
-                    <button className="btn btn-ghost btn-icon btn-sm" title="Download PDF" onClick={e=>{ e.stopPropagation(); handleDownloadCapaPDF(c); }}><FileDown size={14}/></button>
-                  )}
+                  <button className="btn btn-ghost btn-icon btn-sm" title="Preview & Download PDF" onClick={e=>{ e.stopPropagation(); setPreviewCapaId(c.id); }}><FileDown size={14}/></button>
                   {isCapaLocked(c)
                     ? <button className="btn btn-ghost btn-icon btn-sm" title="Locked" disabled><Lock size={14}/></button>
                     : <button className="btn btn-ghost btn-icon btn-sm" title="Edit" onClick={e => { e.stopPropagation(); openEdit(c); }}><Edit2 size={14}/></button>}
@@ -493,12 +476,34 @@ export default function Capas() {
                     <div>
                       <SectionHead>Corrective Action</SectionHead>
                       <p style={{ fontSize:13, color:'var(--text-2)' }}>{c.action || 'No action recorded yet.'}</p>
+                      <div style={{ fontSize:12, color:'var(--text-2)', marginTop:4, display:'flex', gap:14 }}>
+                        <span>Due {fmtDate(c.corrective_due_date)}</span>
+                        <span>Completed {c.corrective_completion_date ? `${fmtDate(c.corrective_completion_date)} by ${c.corrective_completed_by || 'Unknown'}` : '—'}</span>
+                      </div>
                       {c.closed_at && (
                         <>
                           <SectionHead style={{ marginTop:12 }}>Closed On</SectionHead>
                           <p style={{ fontSize:13 }}>{fmtDateTime(c.closed_at)}</p>
                         </>
                       )}
+                    </div>
+                  </div>
+
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, marginTop:16 }}>
+                    <div>
+                      <SectionHead>Preventive Action</SectionHead>
+                      <p style={{ fontSize:13, color:'var(--text-2)' }}>{c.preventive_action || 'No action recorded yet.'}</p>
+                      <div style={{ fontSize:12, color:'var(--text-2)', marginTop:4, display:'flex', gap:14 }}>
+                        <span>Due {fmtDate(c.preventive_due_date)}</span>
+                        <span>Completed {c.preventive_completion_date ? `${fmtDate(c.preventive_completion_date)} by ${c.preventive_completed_by || 'Unknown'}` : '—'}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <SectionHead>Verify Effectiveness of Implemented Action</SectionHead>
+                      <p style={{ fontSize:13, color:'var(--text-2)' }}>{c.verification_comments || 'Not yet verified.'}</p>
+                      <div style={{ fontSize:12, color:'var(--text-2)', marginTop:4 }}>
+                        <span>Verified {c.verification_date ? `${fmtDate(c.verification_date)} by ${c.verified_by || 'Unknown'}` : '—'}</span>
+                      </div>
                     </div>
                   </div>
 
@@ -649,6 +654,20 @@ export default function Capas() {
         </div>
         <div className="form-row"><label>Root Cause</label><textarea value={form.root_cause} onChange={f('root_cause')} placeholder="Root cause analysis…" style={{ minHeight:60 }}/></div>
         <div className="form-row"><label>Corrective Action</label><textarea value={form.action} onChange={f('action')} placeholder="Planned or completed corrective actions…" style={{ minHeight:60 }}/></div>
+        <div className="form-2col">
+          <div className="form-row"><label>Corrective Action — Due Date</label><input type="date" value={form.corrective_due_date || ''} onChange={f('corrective_due_date')}/></div>
+          <div className="form-row"><label>Corrective Action — Completion Date</label><input type="date" value={form.corrective_completion_date || ''} onChange={f('corrective_completion_date')}/></div>
+        </div>
+
+        <div className="form-row"><label>Preventive Action</label><textarea value={form.preventive_action} onChange={f('preventive_action')} placeholder="Planned or completed preventive actions…" style={{ minHeight:60 }}/></div>
+        <div className="form-2col">
+          <div className="form-row"><label>Preventive Action — Due Date</label><input type="date" value={form.preventive_due_date || ''} onChange={f('preventive_due_date')}/></div>
+          <div className="form-row"><label>Preventive Action — Completion Date</label><input type="date" value={form.preventive_completion_date || ''} onChange={f('preventive_completion_date')}/></div>
+        </div>
+
+        <div className="form-row"><label>Verify Effectiveness of Implemented Action</label><textarea value={form.verification_comments} onChange={f('verification_comments')} placeholder="Comments on the effectiveness of the corrective/preventive actions…" style={{ minHeight:60 }}/></div>
+        <div className="form-row"><label>Verification Date</label><input type="date" value={form.verification_date || ''} onChange={f('verification_date')}/></div>
+
         <div className="form-2col">
           <div className="form-row">
             <label>Status</label>
@@ -852,6 +871,10 @@ export default function Capas() {
             </div>
           </div>
         </div>
+      )}
+
+      {previewCapaId && (
+        <CapaPreviewModal capaId={previewCapaId} onClose={()=>setPreviewCapaId(null)}/>
       )}
 
       <ConfirmDialog open={!!delTarget} onClose={() => setDel(null)} danger

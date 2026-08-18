@@ -15,7 +15,11 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'PUT') {
-      const { id: newId, type, title, detail, clause, source, owner_id, due_date, root_cause, action, status, pct_complete, updated_by } = req.body;
+      const {
+        id: newId, type, title, detail, clause, source, owner_id, due_date, root_cause, action, status, pct_complete, updated_by,
+        corrective_due_date, corrective_completion_date, preventive_action, preventive_due_date, preventive_completion_date,
+        verification_comments, verification_date,
+      } = req.body;
       if (!newId || !title || !type || !status) return res.status(400).json({ error: 'id, title, type, status are required' });
       if (!['NCR','CAPA','Observation','Opportunity for Improvement'].includes(type)) return res.status(400).json({ error: 'Invalid type' });
 
@@ -29,8 +33,30 @@ export default async function handler(req, res) {
       let owner = null;
       if (owner_id) { const user = await db.prepare('SELECT name FROM users WHERE id = ?').get(owner_id); if (user) owner = user.name; }
 
-      await db.prepare(`UPDATE capas SET id=@id, type=@type, title=@title, detail=@detail, clause=@clause, source=@source, owner=@owner, owner_id=@owner_id, due_date=@due_date, root_cause=@root_cause, action=@action, status=@status, pct_complete=@pct_complete, closed_at=@closed_at, updated_by=@updated_by, updated_at=datetime('now') WHERE id=@oldId`)
-        .run({ id: newId || id, type, title, detail: detail || null, clause: clause || null, source: source || null, owner, owner_id: owner_id || null, due_date: due_date || null, root_cause: root_cause || null, action: action || null, status, pct_complete: pct_complete || 0, closed_at, updated_by: updated_by || existing.created_by || 'Unknown', oldId: id });
+      // A completion date newly entered on this save is attributed to whoever
+      // saved it; once set it keeps its original attribution on later edits.
+      const corrective_completed_by = corrective_completion_date
+        ? (!existing.corrective_completion_date ? (updated_by || 'Unknown') : existing.corrective_completed_by)
+        : null;
+      const preventive_completed_by = preventive_completion_date
+        ? (!existing.preventive_completion_date ? (updated_by || 'Unknown') : existing.preventive_completed_by)
+        : null;
+      const verified_by = verification_date
+        ? (!existing.verification_date ? (updated_by || 'Unknown') : existing.verified_by)
+        : null;
+
+      await db.prepare(`UPDATE capas SET
+          id=@id, type=@type, title=@title, detail=@detail, clause=@clause, source=@source, owner=@owner, owner_id=@owner_id, due_date=@due_date, root_cause=@root_cause, action=@action, status=@status, pct_complete=@pct_complete, closed_at=@closed_at, updated_by=@updated_by, updated_at=datetime('now'),
+          corrective_due_date=@corrective_due_date, corrective_completion_date=@corrective_completion_date, corrective_completed_by=@corrective_completed_by,
+          preventive_action=@preventive_action, preventive_due_date=@preventive_due_date, preventive_completion_date=@preventive_completion_date, preventive_completed_by=@preventive_completed_by,
+          verification_comments=@verification_comments, verification_date=@verification_date, verified_by=@verified_by
+        WHERE id=@oldId`)
+        .run({
+          id: newId || id, type, title, detail: detail || null, clause: clause || null, source: source || null, owner, owner_id: owner_id || null, due_date: due_date || null, root_cause: root_cause || null, action: action || null, status, pct_complete: pct_complete || 0, closed_at, updated_by: updated_by || existing.created_by || 'Unknown', oldId: id,
+          corrective_due_date: corrective_due_date || null, corrective_completion_date: corrective_completion_date || null, corrective_completed_by,
+          preventive_action: preventive_action || null, preventive_due_date: preventive_due_date || null, preventive_completion_date: preventive_completion_date || null, preventive_completed_by,
+          verification_comments: verification_comments || null, verification_date: verification_date || null, verified_by,
+        });
 
       const assigneeChanged = owner_id && String(owner_id) !== String(existing.owner_id || '');
       if (assigneeChanged) createNotification(db, { userId: owner_id, type: 'capa_assigned', title: `${type} assigned to you — ${newId || id}`, message: title, link: '/capas', createdBy: updated_by || 'System' });

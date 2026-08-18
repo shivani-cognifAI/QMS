@@ -1420,14 +1420,16 @@ export function exportArchivedVersionPDF(doc, history = [], settings = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. NCR/CAPA RECORD PDF — only ever generated for Approved & Closed records
-//    (the locked, final state), so this is a permanent audit artifact, not a
-//    draft/working copy. Reuses the same rich-content and PDF-merge machinery
-//    built for documents above.
+// 4. NCR/CAPA RECORD PDF — available for any record, at any status. An
+//    Approved & Closed record is watermarked as the permanent official
+//    record; any other status is watermarked as a draft/working copy, same
+//    convention as the document PDF export above. Reuses the same
+//    rich-content and PDF-merge machinery built for documents above.
 //    Page 1: Cover (record ID, title, type, status)
-//    Page 2: Metadata + Nonconformity Detail / Root Cause / Corrective Action
+//    Page 2: Metadata + Nonconformity Detail / Root Cause / Corrective Action /
+//            Preventive Action / Verification of Effectiveness
 //    Next:   Evidence (created docs rendered inline; uploaded PDFs merged in)
-//    Last:   Approval History table
+//    Last:   Audit Log table
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Cover page for a CAPA record — same branding treatment as the document
@@ -1452,7 +1454,10 @@ function addCapaCoverPage(pdf, capa, settings = {}) {
   pdf.setFont(font, 'normal');
   pdf.setFontSize(10);
   pdf.setTextColor('#6B6960');
-  pdf.text('NCR / CAPA Record — Official Closed Record', cx, 58, { align: 'center' });
+  const coverSubtitle = capa.status === 'Approved & Closed'
+    ? 'NCR / CAPA Record — Official Closed Record'
+    : 'NCR / CAPA Record — Working Copy';
+  pdf.text(coverSubtitle, cx, 58, { align: 'center' });
   pdf.setTextColor('#000000');
 
   pdf.setFont(font, 'bold');
@@ -1512,6 +1517,15 @@ function buildCapaAuditTrailForPdf(capa, workflowHistory) {
   if (capa.updated_at && capa.updated_by && capa.updated_at !== capa.created_at) {
     entries.push({ at: capa.updated_at, label: 'Last edited', by: capa.updated_by });
   }
+  if (capa.corrective_completion_date) {
+    entries.push({ at: capa.corrective_completion_date, label: 'Corrective Action completed', by: capa.corrective_completed_by || 'Unknown' });
+  }
+  if (capa.preventive_completion_date) {
+    entries.push({ at: capa.preventive_completion_date, label: 'Preventive Action completed', by: capa.preventive_completed_by || 'Unknown' });
+  }
+  if (capa.verification_date) {
+    entries.push({ at: capa.verification_date, label: 'Effectiveness verified', by: capa.verified_by || 'Unknown', comment: capa.verification_comments });
+  }
   for (const wf of (workflowHistory || [])) {
     entries.push({ at: wf.created_at, label: 'Submitted for approval', by: wf.submitted_by });
     for (const step of (wf.steps || [])) {
@@ -1527,7 +1541,7 @@ function buildCapaAuditTrailForPdf(capa, workflowHistory) {
 
 function addCapaApprovalHistoryPage(pdf, capa, workflowHistory, settings = {}) {
   pdf.addPage();
-  addPageHeader(pdf, `${capa.id} — Approval History`, capa.title, settings);
+  addPageHeader(pdf, `${capa.id} — Audit Log`, capa.title, settings);
 
   const trail = buildCapaAuditTrailForPdf(capa, workflowHistory);
   const { width } = pdf.internal.pageSize;
@@ -1550,10 +1564,10 @@ function addCapaApprovalHistoryPage(pdf, capa, workflowHistory, settings = {}) {
     theme: 'striped',
   });
 
-  addPageFooter(pdf, `${capa.id} — Approval History`);
+  addPageFooter(pdf, `${capa.id} — Audit Log`);
 }
 
-// Main entry point — exports a PDF for an Approved & Closed NCR/CAPA record.
+// Main entry point — exports a PDF for an NCR/CAPA record at any status.
 // `evidenceAttachments` follows the same shape used for document attachments:
 // [{ title, html }] for created (rich-text) evidence, plus `mergePdfs` for
 // uploaded PDF evidence files whose actual pages should be merged in
@@ -1594,6 +1608,9 @@ export function exportCapaRecordPDF(capa, workflowHistory = [], settings = {}, e
       ['Source',      capa.source || '—',        'Clause',       capa.clause || '—'],
       ['Raised',      capa.raised_at ? String(capa.raised_at).slice(0,10) : '—', 'Due Date', capa.due_date || '—'],
       ['Closed',      capa.closed_at ? String(capa.closed_at).slice(0,10) : '—', 'Owner',    capa.owner || '—'],
+      ['CA Due',      capa.corrective_due_date || '—', 'CA Completed', capa.corrective_completion_date ? `${capa.corrective_completion_date} (${capa.corrective_completed_by || '—'})` : '—'],
+      ['PA Due',      capa.preventive_due_date || '—', 'PA Completed', capa.preventive_completion_date ? `${capa.preventive_completion_date} (${capa.preventive_completed_by || '—'})` : '—'],
+      ['Verified On', capa.verification_date ? `${capa.verification_date} (${capa.verified_by || '—'})` : '—', '', ''],
     ],
     styles: { fontSize: 9, cellPadding: 4 },
     columnStyles: {
@@ -1630,6 +1647,8 @@ export function exportCapaRecordPDF(capa, workflowHistory = [], settings = {}, e
   addPlainSection('Nonconformity Detail', capa.detail);
   addPlainSection('Root Cause', capa.root_cause);
   addPlainSection('Corrective Action', capa.action);
+  addPlainSection('Preventive Action', capa.preventive_action);
+  addPlainSection('Verify Effectiveness of Implemented Action', capa.verification_comments);
   addPageFooter(pdf, `${capa.id} — Record Detail`);
 
   // ── Next: Evidence — created (rich-text) docs rendered inline ──────────
@@ -1651,15 +1670,18 @@ export function exportCapaRecordPDF(capa, workflowHistory = [], settings = {}, e
     mergeInsertions.push({ afterPage: pdf.internal.getNumberOfPages(), fileId: m.fileId, filename: m.filename });
   }
 
-  // ── Last page: Approval History ─────────────────────────────────────────
+  // ── Last page: Audit Log ──────────────────────────────────────────────────
   addCapaApprovalHistoryPage(pdf, capa, workflowHistory, settings);
 
-  const filename = `${capa.id}_Approved_Closed_Record.pdf`;
+  const isClosed = capa.status === 'Approved & Closed';
+  const filename = `${capa.id}_${isClosed ? 'Approved_Closed_Record' : 'Record'}.pdf`;
+  const watermarkText  = isClosed ? 'OFFICIAL RECORD' : 'DRAFT — NOT FOR USE';
+  const watermarkColor = isClosed ? '#1A7F37' : '#F0AD4E';
 
   if (mergeInsertions.length === 0) {
     // No uploaded PDF evidence to merge — finish synchronously, same
     // structure as exportSingleDocumentPDF's no-merge path.
-    stampWatermark(pdf, 'OFFICIAL RECORD', '#1A7F37');
+    stampWatermark(pdf, watermarkText, watermarkColor);
     finalizePageNumbers(pdf);
     pdf.save(filename);
     return;
@@ -1674,8 +1696,8 @@ export function exportCapaRecordPDF(capa, workflowHistory = [], settings = {}, e
     pdfBytes: pdf.output('arraybuffer'),
     mergeInsertions,
     filename,
-    watermarkText: 'OFFICIAL RECORD',
-    watermarkColor: '#1A7F37',
+    watermarkText,
+    watermarkColor,
   };
 }
 
